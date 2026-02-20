@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Simple Cropper</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app">
+        <header>
+            <button id="uploadTrigger" class="icon-btn" title="Open Image">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <span>Open</span>
+            </button>
+            <div class="spacer"></div>
+            <button id="downloadBtn" class="primary-btn" disabled>
+                <span>Save</span>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+            </button>
+        </header>
+
+        <main id="editorArea">
+            <div id="emptyState">
+                <p>Tap "Open" to choose an image</p>
+            </div>
+            
+            <div class="canvas-wrapper">
+                <canvas id="editorCanvas"></canvas>
+                <div id="cropOverlay">
+                    <div id="cropBox">
+                        <div class="handle nw" data-dir="nw"></div>
+                        <div class="handle ne" data-dir="ne"></div>
+                        <div class="handle sw" data-dir="sw"></div>
+                        <div class="handle se" data-dir="se"></div>
+                        <!-- Edge handles -->
+                        <div class="handle n" data-dir="n"></div>
+                        <div class="handle e" data-dir="e"></div>
+                        <div class="handle s" data-dir="s"></div>
+                        <div class="handle w" data-dir="w"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer id="toolbar">
+            <div class="scroll-row">
+                <button class="tool-btn active" data-action="ratio" data-value="free">Free</button>
+                <button class="tool-btn" data-action="ratio" data-value="1">1:1</button>
+                <button class="tool-btn" data-action="ratio" data-value="1.33">4:3</button>
+                <button class="tool-btn" data-action="ratio" data-value="1.77">16:9</button>
+                <div class="sep"></div>
+                <button class="tool-btn" data-action="shape" id="shapeBtn">
+                    <span class="shape-icon rect"></span>
+                </button>
+                <button class="tool-btn" data-action="rotate" id="rotateBtn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6"></path>
+                        <path d="M20.49 15a9 9 0 1 1 2.12-9.36L23 10"></path>
+                    </svg>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <input type="file" id="fileInput" accept="image/*" hidden>
+    
+    <script type="module" src="script.js"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>

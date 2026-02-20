@@ -1,0 +1,364 @@
+// Audio Context for sound effects
+const clickSound = new Audio('click.mp3');
+const shutterSound = new Audio('shutter.mp3');
+
+function playClick() {
+    clickSound.currentTime = 0;
+    clickSound.play().catch(() => {}); // Ignore auto-play blocks
+}
+
+// Elements
+const fileInput = document.getElementById('fileInput');
+const uploadTrigger = document.getElementById('uploadTrigger');
+const downloadBtn = document.getElementById('downloadBtn');
+const canvas = document.getElementById('editorCanvas');
+const ctx = canvas.getContext('2d');
+const wrapper = document.querySelector('.canvas-wrapper');
+const cropBox = document.getElementById('cropBox');
+const editorArea = document.getElementById('editorArea');
+const emptyState = document.getElementById('emptyState');
+const shapeBtn = document.getElementById('shapeBtn');
+
+// State
+let state = {
+    img: null,
+    rotation: 0, // 0, 90, 180, 270
+    aspectRatio: null, // null for free
+    isCircle: false,
+    crop: { x: 0, y: 0, w: 0, h: 0 }, // Relative to displayed canvas
+    imgName: 'image'
+};
+
+// UI Handlers
+uploadTrigger.addEventListener('click', () => {
+    playClick();
+    fileInput.click();
+});
+
+fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        state.imgName = file.name.split('.')[0];
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const img = new Image();
+            img.onload = () => {
+                state.img = img;
+                state.rotation = 0;
+                resetEditor();
+            };
+            img.src = evt.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+function resetEditor() {
+    emptyState.style.display = 'none';
+    wrapper.style.display = 'block';
+    downloadBtn.disabled = false;
+    
+    renderCanvas();
+    
+    // Init crop box to 80% of canvas
+    const w = canvas.width * 0.8;
+    const h = canvas.height * 0.8;
+    const x = (canvas.width - w) / 2;
+    const y = (canvas.height - h) / 2;
+    
+    updateCropState(x, y, w, h);
+    if(state.isCircle) enforceCircle();
+}
+
+function renderCanvas() {
+    if (!state.img) return;
+
+    // Determine canvas size based on rotation
+    const isPortrait = state.rotation === 90 || state.rotation === 270;
+    const naturalWidth = state.img.width;
+    const naturalHeight = state.img.height;
+    
+    const targetW = isPortrait ? naturalHeight : naturalWidth;
+    const targetH = isPortrait ? naturalWidth : naturalHeight;
+
+    // Fit within the editor area max bounds
+    const containerW = editorArea.clientWidth - 32; // padding
+    const containerH = editorArea.clientHeight - 32;
+
+    const scale = Math.min(containerW / targetW, containerH / targetH);
+    
+    canvas.width = targetW * scale;
+    canvas.height = targetH * scale;
+
+    // Draw with rotation
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(state.rotation * Math.PI / 180);
+    ctx.scale(scale, scale);
+    ctx.drawImage(state.img, -naturalWidth / 2, -naturalHeight / 2);
+    ctx.restore();
+}
+
+// Crop Logic
+function updateCropState(x, y, w, h) {
+    // Clamp
+    const min = 40;
+    const maxW = canvas.width;
+    const maxH = canvas.height;
+
+    // Ensure within bounds
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x + w > maxW) {
+        if (w > maxW) w = maxW;
+        x = maxW - w;
+    }
+    if (y + h > maxH) {
+        if (h > maxH) h = maxH;
+        y = maxH - h;
+    }
+
+    state.crop = { x, y, w, h };
+    renderCropBox();
+}
+
+function renderCropBox() {
+    cropBox.style.left = `${state.crop.x}px`;
+    cropBox.style.top = `${state.crop.y}px`;
+    cropBox.style.width = `${state.crop.w}px`;
+    cropBox.style.height = `${state.crop.h}px`;
+}
+
+// Drag & Resize
+let isDragging = false;
+let resizeDir = null; // nw, ne, sw, se, n, s, e, w
+let startPos = { x: 0, y: 0 };
+let startCrop = { x: 0, y: 0, w: 0, h: 0 };
+
+cropBox.addEventListener('pointerdown', handleStart);
+
+function handleStart(e) {
+    e.preventDefault();
+    if (!state.img) return;
+
+    const target = e.target;
+    if (target.classList.contains('handle')) {
+        resizeDir = target.dataset.dir;
+    } else {
+        isDragging = true;
+    }
+
+    startPos = { x: e.clientX, y: e.clientY };
+    startCrop = { ...state.crop };
+
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleEnd);
+    document.addEventListener('pointercancel', handleEnd);
+}
+
+function handleMove(e) {
+    if (!isDragging && !resizeDir) return;
+    e.preventDefault();
+
+    const dx = e.clientX - startPos.x;
+    const dy = e.clientY - startPos.y;
+
+    if (isDragging) {
+        updateCropState(startCrop.x + dx, startCrop.y + dy, startCrop.w, startCrop.h);
+    } else if (resizeDir) {
+        let { x, y, w, h } = startCrop;
+        const min = 40;
+
+        // Apply Delta based on handle
+        if (resizeDir.includes('e')) w += dx;
+        if (resizeDir.includes('w')) { x += dx; w -= dx; }
+        if (resizeDir.includes('s')) h += dy;
+        if (resizeDir.includes('n')) { y += dy; h -= dy; }
+
+        // Fix negative dimensions (flipping)
+        if (w < min) {
+             if (resizeDir.includes('w')) x = startCrop.x + startCrop.w - min;
+             w = min;
+        }
+        if (h < min) {
+             if (resizeDir.includes('n')) y = startCrop.y + startCrop.h - min;
+             h = min;
+        }
+
+        // Apply Aspect Ratio if set
+        if (state.aspectRatio || state.isCircle) {
+            const ratio = state.isCircle ? 1 : state.aspectRatio;
+            
+            // If dragging corner, preserve ratio based on width or height dominance?
+            // Simple approach: width drives height for E/W, height drives width for N/S
+            // For corners, let's prioritize width change
+            
+            if (resizeDir.length === 2) { // Corner
+                // If moving diagonally, take the max displacement to feel natural
+                if (Math.abs(dx) > Math.abs(dy)) {
+                     h = w / ratio;
+                     if (resizeDir.includes('n')) y = startCrop.y + startCrop.h - h;
+                } else {
+                     w = h * ratio;
+                     if (resizeDir.includes('w')) x = startCrop.x + startCrop.w - w;
+                }
+            } else { // Edge
+                if (resizeDir === 'e' || resizeDir === 'w') {
+                    h = w / ratio;
+                    y = startCrop.y + (startCrop.h - h)/2; // Center vertically
+                } else {
+                    w = h * ratio;
+                    x = startCrop.x + (startCrop.w - w)/2; // Center horizontally
+                }
+            }
+        }
+
+        updateCropState(x, y, w, h);
+    }
+}
+
+function handleEnd() {
+    isDragging = false;
+    resizeDir = null;
+    document.removeEventListener('pointermove', handleMove);
+    document.removeEventListener('pointerup', handleEnd);
+    document.removeEventListener('pointercancel', handleEnd);
+}
+
+// Toolbar actions
+document.querySelectorAll('[data-action="ratio"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        playClick();
+        document.querySelectorAll('[data-action="ratio"]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const val = btn.dataset.value;
+        state.aspectRatio = val === 'free' ? null : parseFloat(val);
+        
+        // If switching to ratio, enforce it immediately on current crop
+        if (state.aspectRatio) {
+            let { x, y, w, h } = state.crop;
+            // Adjust height to match width
+            h = w / state.aspectRatio;
+            // If that overflows, adjust width to match height
+            if (y + h > canvas.height) {
+                h = canvas.height - y;
+                w = h * state.aspectRatio;
+            }
+             // Center correction if needed? Nah, just fit.
+            updateCropState(x, y, w, h);
+        }
+    });
+});
+
+document.getElementById('rotateBtn').addEventListener('click', () => {
+    playClick();
+    if (!state.img) return;
+    state.rotation = (state.rotation + 90) % 360;
+    renderCanvas();
+    // Reset crop to center after rotation because dimensions changed
+    const w = canvas.width * 0.8;
+    const h = canvas.height * 0.8;
+    updateCropState((canvas.width - w)/2, (canvas.height - h)/2, w, h);
+});
+
+shapeBtn.addEventListener('click', () => {
+    playClick();
+    state.isCircle = !state.isCircle;
+    const icon = shapeBtn.querySelector('.shape-icon');
+    
+    if (state.isCircle) {
+        cropBox.classList.add('circle');
+        icon.classList.remove('rect');
+        icon.classList.add('circle');
+        enforceCircle();
+    } else {
+        cropBox.classList.remove('circle');
+        icon.classList.remove('circle');
+        icon.classList.add('rect');
+    }
+});
+
+function enforceCircle() {
+    // Circle requires 1:1
+    state.aspectRatio = 1; 
+    // Find active ratio button if exists, or just deselect all to indicate custom mode? 
+    // Actually circle forces 1:1, so highlight 1:1
+    document.querySelectorAll('[data-action="ratio"]').forEach(b => {
+        b.classList.remove('active');
+        if(b.dataset.value === "1") b.classList.add('active');
+    });
+
+    let { x, y, w, h } = state.crop;
+    const size = Math.min(w, h);
+    updateCropState(x, y, size, size);
+}
+
+// Download
+downloadBtn.addEventListener('click', () => {
+    if (!state.img) return;
+    shutterSound.play().catch(()=>{});
+
+    // 1. Calculate Crop Coordinates relative to the source image
+    // Canvas dimensions: canvas.width, canvas.height
+    // Image is drawn scaled.
+    // We need to map cropBox (x,y,w,h) from Canvas space to Transformed Image space
+    
+    // Actually, simplest way: Create a temp canvas same size as visible canvas, 
+    // draw image exactly as visible, then crop from THAT.
+    // BUT we want full resolution.
+    
+    // Full Res Strategy:
+    // Create canvas with size = (Image Natural Width/Height swapped if rotated)
+    const isPortrait = state.rotation === 90 || state.rotation === 270;
+    const fullW = isPortrait ? state.img.height : state.img.width;
+    const fullH = isPortrait ? state.img.width : state.img.height;
+    
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = fullW;
+    offCanvas.height = fullH;
+    const offCtx = offCanvas.getContext('2d');
+    
+    // Draw rotated full image
+    offCtx.save();
+    offCtx.translate(fullW/2, fullH/2);
+    offCtx.rotate(state.rotation * Math.PI / 180);
+    offCtx.drawImage(state.img, -state.img.width/2, -state.img.height/2);
+    offCtx.restore();
+    
+    // Calculate Scale Factor between Visible Canvas and Full Res Canvas
+    const scaleFactor = fullW / canvas.width;
+    
+    const cropX = state.crop.x * scaleFactor;
+    const cropY = state.crop.y * scaleFactor;
+    const cropW = state.crop.w * scaleFactor;
+    const cropH = state.crop.h * scaleFactor;
+    
+    // Create final canvas
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = cropW;
+    finalCanvas.height = cropH;
+    const finalCtx = finalCanvas.getContext('2d');
+    
+    if (state.isCircle) {
+        finalCtx.beginPath();
+        finalCtx.arc(cropW/2, cropH/2, cropW/2, 0, Math.PI * 2);
+        finalCtx.clip();
+    }
+    
+    finalCtx.drawImage(offCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    
+    // Download
+    finalCanvas.toBlob(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${state.imgName}_cropped.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, 'image/png');
+});
+
+// Initialize icons
+shapeBtn.querySelector('.shape-icon').classList.add('rect');
